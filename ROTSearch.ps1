@@ -8,12 +8,14 @@ This script is used to perform the following functions:
 - Create a report with those files
 
 .PARAMETER Path
-The path of the drive to search for files. Default is C:\Users\<Username>\Documents drive.
+The path of the drive to search for files. Default is \Users\<Username>\Documents drive.
 
 .PARAMETER Aged
-Enter only a numberical value for years aged to qualify as obsolete files. Default is 7.
+Enter only a numerical value for years aged to qualify as obsolete files. Default is 7.
 
 .NOTES
+https://github.com/AKapaldo/ROT
+
 Date                Ver     Author          Details                         
 -------------------------------------------------------------------------------------------     
 19  Mar 2024        1.0.0   Andrew Kapaldo  Initial Release
@@ -24,19 +26,20 @@ Date                Ver     Author          Details
 [cmdletbinding()]
 param(
 	[Parameter(Position=0, HelpMessage="Enter Folder Path (Default is C:\Users\<username>\Documents drive)", Mandatory=$False)]
-	[string]$path,
+	[string]$Path,
 	[Parameter(Position=1, HelpMessage="Years aged for obsolete files (default is 7)",Mandatory=$False)]
-	[string]$aged,
+	[string]$Aged,
     [Parameter(HelpMessage="Use creation date instead of modified",Mandatory=$False)]
 	[Switch]$UseCreationDate,
     [Parameter(HelpMessage="Use last accessed date instead of modified",Mandatory=$False)]
 	[Switch]$UseAccessDate
 )
-Process {
+
 # Setting default parameters
 $ErrorActionPreference = "SilentlyContinue"
-$username = $env:username
+$username = [System.Environment]::Username
 $OS = [System.Environment]::OSVersion.Platform
+$Sep = [System.IO.Path]::DirectorySeparatorChar
 
 # Setting Obsolete Date. If none chosen, default is 7 years.
 If (("" -eq $Aged) -or " " -eq $Aged){
@@ -66,11 +69,16 @@ If ("" -eq $path){
         $path = "C:\Users\$username\Documents"
         }
         elseif ($OS -eq "Unix") {
-            $path = "~\Users\$username\Documents"
+            if (Test-Path "/Users/$username/Documents") {
+                $path = "/Users/$username/Documents"
+            }
+             elseif (Test-Path "/home/$username/Documents") {
+                $path = "/home/$username/Documents"
+            }
         }
         else {
             Yellow
-            Write-Host "Unknown Operating System. Try using the -Path switch. (Example: ./ROTSearch.ps1 -Path 'C:\Userdata')"
+            Write-Host "Unknown Operating System. Please specifiy -Path parameter. (Example: ./ROTSearch.ps1 -Path 'C:\Userdata')"
         }
     }
     Catch {
@@ -79,6 +87,10 @@ If ("" -eq $path){
     }
 }
 
+# Define file output paths
+$RedundantFile = Join-Path -Path $Path -ChildPath "Redundant.csv"
+$ObsoleteFile = Join-Path -Path $Path -ChildPath "Obsolete.csv"
+$TrivialFile = Join-Path -Path $Path -ChildPath "Trivial.csv"
 
 #Display banner, title, and version
 $Title = "
@@ -96,6 +108,8 @@ Write-host "$title`nRedundant, Obsolete, and Trivial Search    Version - $versio
 If (($aged -ne "") -and ($path -ne "") -and ($trivial -ne "")){
     Green
     Write-host "Settings configured..."
+    Write-Host "    Search Path: $Path" -ForegroundColor Gray
+    Write-Host "    Obsolete Age: $Aged years (before $($ObsoleteDate.ToString('yyyy-MM-dd')))" -ForegroundColor Gray
 }
 Else {
     Red
@@ -110,24 +124,25 @@ Else {
 # Check the folder for existing ROT reports, if they exist remove them. The process uses the -Append function and existing files will have old and new data in the same file.
 Green
 write-host "Searching $path for existing ROT reports..." 
-
-If (Test-Path -Path "$path\Redundant.csv") {
-    Write-Host "    " -NoNewLine
-    Red
-    Write-Host "Redundant.csv file found. Removing old file..."
-    Remove-Item -Path "$path\Redundant.csv"
-}
-If (Test-Path -Path "$path\Obsolete.csv") {
-    Write-Host "    " -NoNewLine
-    Red
-    Write-Host "Obsolete.csv file found. Removing old file..."
-    Remove-Item -Path "$path\Obsolete.csv"
-}
-If (Test-Path -Path "$path\Trivial.csv") {
-    Write-Host "    " -NoNewLine
-    Red
-    Write-Host "Trivial.csv file found. Removing old file..."
-    Remove-Item -Path "$path\Trivial.csv"
+If ((Test-Path -Path $RedundantFile) -or (Test-Path -Path $ObsoleteFile) -or (Test-Path -Path $TrivialFile)) {
+    If (Test-Path -Path "$RedundantFile") {
+        Write-Host "    " -NoNewLine
+        Red
+        Write-Host "Redundant.csv file found. Removing old file..."
+        Remove-Item -Path "$RedundantFile"
+    }
+    If (Test-Path -Path "$ObsoleteFile") {
+        Write-Host "    " -NoNewLine
+        Red
+        Write-Host "Obsolete.csv file found. Removing old file..."
+        Remove-Item -Path "$ObsoleteFile"
+    }
+    If (Test-Path -Path "$TrivialFile") {
+        Write-Host "    " -NoNewLine
+        Red
+        Write-Host "Trivial.csv file found. Removing old file..."
+        Remove-Item -Path "$TrivialFile"
+    }
 }
 Else {
     Write-Host "    " -NoNewLine
@@ -164,19 +179,19 @@ If (($allfiles).Count -eq 0) {
 Green
 write-host "Searching for redundant files..." 
 
-#Hash the files using SHA256 and compare hashes for duplicates. Run in parallel with up to 5 concurrent sessions for speed.
-$files = $allfiles | Group-Object -Property Length | Where-Object { $_.Count -gt 1 } | ForEach-Object -Parallel -ThrottleLimit 5 { $_.Group | Select-Object FullName, Length, @{Name = 'Hash'; Expression = {($_ | Get-FileHash -Algorithm SHA256).Hash}}} -
+#Hash the files using SHA256 and compare hashes for duplicates.
+$files = $allfiles | Group-Object -Property Length | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Group | Select-Object FullName, Length, @{Name = 'Hash'; Expression = {($_ | Get-FileHash -Algorithm SHA256).Hash}}} 
 $R = $files | Group-Object Hash | Where-Object { $_.Count -gt 1 } 
 
 #If there are duplicates, then create a CSV file of them in the folder
 If (($R).count -gt 0){
-$R | ForEach-Object {$_.Group | select-object FullName, Hash} | Export-CSV "$path\Redundant.csv" -Append -NoTypeInformation
+$R | ForEach-Object {$_.Group | select-object FullName, Hash} | Export-CSV "$RedundantFile" -Append -NoTypeInformation
 }
 
-If (Test-Path -Path "$path\Redundant.csv") {
+If (Test-Path -Path "$RedundantFile") {
     Write-Host "    " -NoNewLine
     Green
-    Write-Host "$(($R).count) redundant files found. Details have been placed at $path\Redundant.csv"
+    Write-Host "$(($R).count) redundant files found. Details have been placed at $RedundantFile"
 }
 Else {
     Write-Host "    " -NoNewLine
@@ -191,23 +206,23 @@ Else {
 Green
 write-host "Searching for files older than: $ObsoleteDate..."
 
-If ($Using:UseAccessDate){
+If ($UseAccessDate){
     #If the UseAccessDate switch is set, check the last access time compared to the ObsoleteDate value (7 years default) for each file
     $o = $allfiles | Where-Object LastAccessTime -lt $ObsoleteDate 
 
     #If there are files older than the ObsoleteDate, then create a CSV file of them in the folder
     If (($o).count -gt 0){
-        $o | select-object FullName, @{Name = 'LastAccessed'; Expression = {$_.LastAccessTime}} | Export-CSV "$path\Obsolete.csv" -Append -NoTypeInformation
+        $o | select-object FullName, @{Name = 'LastAccessed'; Expression = {$_.LastAccessTime}} | Export-CSV "$ObsoleteFile" -Append -NoTypeInformation
     }
 }
 
-ElseIf ($Using:UseCreationDate){
+ElseIf ($UseCreationDate){
     #If the UseCreationDate switch is set, check the created time compared to the ObsoleteDate value (7 years default) for each file
     $o = $allfiles | Where-Object CreationTime -lt $ObsoleteDate 
 
     #If there are files older than the ObsoleteDate, then create a CSV file of them in the folder
     If (($o).count -gt 0){
-        $o | select-object FullName, @{Name = 'Created'; Expression = {$_.CreationTime}} | Export-CSV "$path\Obsolete.csv" -Append -NoTypeInformation
+        $o | select-object FullName, @{Name = 'Created'; Expression = {$_.CreationTime}} | Export-CSV "$ObsoleteFile" -Append -NoTypeInformation
     }
 }
 
@@ -217,14 +232,14 @@ Else {
 
     #If there are files older than the ObsoleteDate, then create a CSV file of them in the folder
     If (($o).count -gt 0){
-        $o | select-object FullName, @{Name = 'LastModified'; Expression = {$_.LastWriteTime}} | Export-CSV "$path\Obsolete.csv" -Append -NoTypeInformation
+        $o | select-object FullName, @{Name = 'LastModified'; Expression = {$_.LastWriteTime}} | Export-CSV "$ObsoleteFile" -Append -NoTypeInformation
     }
 }
 
-If (Test-Path -Path "$path\Obsolete.csv") {
+If (Test-Path -Path "$ObsoleteFile") {
     Write-Host "    " -NoNewLine
     Green
-    Write-Host "$(($O).count) obsolete files found. Details have been placed at $path\Obsolete.csv"
+    Write-Host "$(($O).count) obsolete files found. Details have been placed at $ObsoleteFile"
 }
 Else {
     Write-Host "    " -NoNewLine
@@ -238,22 +253,20 @@ write-host "Searching for trivial file extensions: " -NoNewLine
 [system.String]::Join(", ",$Trivial) 
 
 #Check the file extension of each file to see if they match values in the trivial list
-$t = $allfiles | Where-Object {$Trivial -eq $_.extension} 
+$t = $allfiles | Where-Object {$Trivial -contains $_.Extension} 
 
 #If there are files with matching extensions, then create a CSV file of them in the folder
 If (($t).count -gt 0){
-    $t | select-object FullName | Export-CSV "$path\Trivial.csv" -Append -NoTypeInformation
+    $t | select-object FullName | Export-CSV "$TrivialFile" -Append -NoTypeInformation
 }
 
-If (Test-Path -Path "$path\Trivial.csv") {
+If (Test-Path -Path "$TrivialFile") {
     Write-Host "    " -NoNewLine
     Green
-    Write-Host "$(($T).count) files with trivial file extensions found. Details have been placed at $path\Trivial.csv"
+    Write-Host "$(($T).count) files with trivial file extensions found. Details have been placed at $TrivialFile"
 }
 Else {
     Write-Host "    " -NoNewLine
     Red
     Write-Host "No files with these file extensions found: $Trivial"
-}
-
 }
