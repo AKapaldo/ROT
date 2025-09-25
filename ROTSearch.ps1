@@ -39,7 +39,6 @@ param(
 $ErrorActionPreference = "SilentlyContinue"
 $username = [System.Environment]::Username
 $OS = [System.Environment]::OSVersion.Platform
-$Sep = [System.IO.Path]::DirectorySeparatorChar
 
 # Setting Obsolete Date. If none chosen, default is 7 years.
 If (("" -eq $Aged) -or " " -eq $Aged){
