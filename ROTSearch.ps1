@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Tool for searching file shares for ROT (Redundant, Obsolete, and Trivial) files.
+This is a tool for searching folders for ROT (Redundant, Obsolete, and Trivial) files.
 
 .DESCRIPTION
 This script is used to perform the following functions:
@@ -8,7 +8,7 @@ This script is used to perform the following functions:
 - Create a report with those files
 
 .PARAMETER Path
-The path of the drive to search for files. Default is \Users\<Username>\Documents drive.
+The path of the drive to search for files. Default is C:\Users\<Username>\Documents\ folder on Windows, /Users/<username>/Documents/ on macOS, and /home/<username>/Documents/ on Linux.
 
 .PARAMETER Aged
 Enter only a numerical value for years aged to qualify as obsolete files. Default is 7.
@@ -74,6 +74,10 @@ If ("" -eq $path){
              elseif (Test-Path "/home/$username/Documents") {
                 $path = "/home/$username/Documents"
             }
+			else {
+				Yellow
+            	Write-Host "Unknown Operating System. Please specifiy -Path parameter. (Example: ./ROTSearch.ps1 -Path 'C:\Userdata')"
+			}
         }
         else {
             Yellow
@@ -174,7 +178,7 @@ If (($allfiles).Count -eq 0) {
 }
 
 
-#Redundant files xxport
+#Redundant files export
 Green
 write-host "Searching for redundant files..." 
 
